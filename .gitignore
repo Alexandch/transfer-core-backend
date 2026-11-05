@@ -11,6 +11,7 @@ coverage.xml
 !.env.example
 tmp/
 output/
+reports/
 *.zip
 *.log
 .idea/

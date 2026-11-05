@@ -3,8 +3,6 @@
 Бэкенд международных переводов: котировка, резерв, выплата, сверка и окончательный расчёт.
 Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL 18, Alembic, HTTPX, Prometheus, pytest.
 
-В проекте реализованы уровни 1-4. Соответствие пунктам задания:
-[REQUIREMENTS.md](REQUIREMENTS.md). Результаты проверок: [VERIFICATION.md](VERIFICATION.md).
 Данные, 10 примеров, эмулятор и scripts/chaos_run.py взяты из предоставленного starter без изменений.
 Их контрольные суммы перечислены в starter-manifest.json и проверяются тестом.
 
@@ -41,8 +39,34 @@ docker compose --profile demo run --rm demo
 Создаются четыре перевода: ok, decline, error_5xx, slow. Проверяются оба режима котировки,
 идемпотентность, выплаты по ledger, изменение баланса и успешный сбор Prometheus.
 Операции остаются в PostgreSQL; при повторном запуске приложения они не исчезают.
-Подробности и PromQL: [DEMO.md](DEMO.md), [monitoring/QUERIES.md](monitoring/QUERIES.md).
+Демо использует клиента c_101 и занимает около 40 секунд. Итог: два COMPLETED, два FAILED,
+резерв возвращается в ноль, spent увеличивается на 20000.00 RUB. Каждый новый запуск создаёт
+ещё четыре перевода. JSON-вывод содержит transfer_id, провайдеров и баланс до/после.
+Демо и другие генераторы операций для одного клиента запускаются последовательно.
 Метрики снимаются каждые 5 секунд, история хранится 7 дней в отдельном томе.
+
+Локальный вариант с сохранением результата:
+
+```sh
+uv run python scripts/demo_run.py --json output/demo.json
+```
+
+На http://127.0.0.1:9090/query ввести PromQL-выражение и выбрать Graph.
+Для просмотра демо удобен диапазон 15 минут. На странице /targets состояние transfer-core должно быть UP.
+
+| Показатель | PromQL |
+|---|---|
+| Доступность API | `up{job="transfer-core"}` |
+| Переводы по статусам | `transfer_core_transfers` |
+| Требуют проверки | `sum(transfer_core_transfer_requires_review) or vector(0)` |
+| Отправки провайдерам | `sum by (provider_id) (transfer_core_attempt_sends_total)` |
+| Резерв клиента в RUB | `transfer_core_balance_minor_units{client_id="c_101",currency="RUB",kind="held"} / 100` |
+| Списано с клиента в RUB | `transfer_core_balance_minor_units{client_id="c_101",currency="RUB",kind="spent"} / 100` |
+| Доступно клиенту в RUB | `transfer_core_balance_minor_units{client_id="c_101",currency="RUB",kind="available"} / 100` |
+
+balance_minor_units выражен в минимальных единицах валюты: RUB делится на 100, KWD - на 1000,
+JPY не делится. Число переводов в чистой базе отображается нулём до первого демо.
+PostgreSQL хранит финансовое состояние, отдельный том Prometheus - историю графиков.
 
 ## Тесты
 
@@ -207,5 +231,4 @@ money.py/pricing.py/rates.py - расчёт; routing.py - выбор; service.py
 provider.py - HTTP; worker.py - исполнение и сверка; mock-provider/ - официальный эмулятор.
 Изолированные искусственные данные регрессионных тестов находятся в tests/fixtures/demo/.
 
-[Архитектура](ARCHITECTURE.md), [решения](DECISIONS.md), [допущения](ASSUMPTIONS.md),
-[ограничения](LIMITS.md), [требования](REQUIREMENTS.md).
+[Решения](DECISIONS.md), [допущения](ASSUMPTIONS.md), [ограничения](LIMITS.md).
