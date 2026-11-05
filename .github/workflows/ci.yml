@@ -1,0 +1,18 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PostgreSQL integration and unit tests
+        run: docker compose --profile test run --build --rm tests
+      - name: Lint
+        run: docker compose --profile test run --rm tests ruff check app tests scripts migrations
+      - name: Format
+        run: docker compose --profile test run --rm tests ruff format --check app tests scripts migrations
+      - name: Clean up
+        if: always()
+        run: docker compose --profile test down -v
