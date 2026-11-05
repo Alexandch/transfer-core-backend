@@ -17,16 +17,32 @@ docker compose up
 ```
 
 Команда собирает образы, запускает PostgreSQL, применяет миграции, добавляет начальные балансы,
-поднимает API, worker и эмулятор. Повторный запуск сохраняет балансы и историю.
+поднимает API, worker, эмулятор и Prometheus. Повторный запуск сохраняет балансы и историю.
 
 API: http://localhost:8080. Swagger: http://localhost:8080/docs.
 Готовность: http://localhost:8080/health. Эмулятор: http://localhost:9000.
+Prometheus с графиками: http://127.0.0.1:9090/query. Проверка сбора: http://127.0.0.1:9090/targets.
 Порты PostgreSQL на хосте: 55438 для сервиса, 55439 для отдельной тестовой БД.
 Том PostgreSQL 18 монтируется в `/var/lib/postgresql`.
 
 В фоне: `docker compose up -d`. Логи: `docker compose logs -f api worker`.
 Остановка: `docker compose down`. Команда `docker compose down -v` удаляет данные проекта.
 Пароли и HMAC в Compose - локальные демонстрационные значения. Переменные перечислены в .env.example.
+
+## Демо и графики
+
+Первый запуск создаёт клиентов и начальные балансы из starter; переводов ещё нет.
+Для демонстрации выполняется отдельная команда:
+
+```sh
+docker compose --profile demo run --rm demo
+```
+
+Создаются четыре перевода: ok, decline, error_5xx, slow. Проверяются оба режима котировки,
+идемпотентность, выплаты по ledger, изменение баланса и успешный сбор Prometheus.
+Операции остаются в PostgreSQL; при повторном запуске приложения они не исчезают.
+Подробности и PromQL: [DEMO.md](DEMO.md), [monitoring/QUERIES.md](monitoring/QUERIES.md).
+Метрики снимаются каждые 5 секунд, история хранится 7 дней в отдельном томе.
 
 ## Тесты
 
@@ -154,6 +170,19 @@ MOCK_SEED определяет поведение провайдера, --seed -
 Эмулятор хранит выплаты и ключи в памяти: перезапуск контейнера сбрасывает его ledger.
 Смена режима и новые прогоны выполняются после завершения текущих операций.
 БД приложения сохраняется в отдельном томе db-starter-release-data.
+
+Для проверки chaos без изменения демонстрационного стенда предусмотрен отдельный Compose-проект:
+
+```sh
+docker compose -f compose.audit.yaml up -d --build --scale worker=4 --wait
+uv run python scripts/chaos_run.py --transfers 300 --seed 42 --api http://127.0.0.1:18080 --mock http://127.0.0.1:19000
+uv run python scripts/check_recovery.py --json output/recovery.json
+```
+
+Вторая команда запускает исходный официальный checker. Третья останавливает только audit-worker
+через SIGKILL после принятия выплаты провайдером и до сохранения ответа, запускает worker снова
+и проверяет единственную выплату и списание. Основной стенд на 8080/9000 остаётся доступен.
+Audit-БД отдельная и временная; `docker compose -f compose.audit.yaml down` удаляет этот тестовый стенд.
 
 ## Нагрузка
 

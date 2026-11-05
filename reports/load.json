@@ -1,17 +1,17 @@
 {
   "transfers": 300,
   "concurrency": 20,
-  "accepted_transfers_per_sec": 30.82,
-  "total_seconds": 20.59,
+  "accepted_transfers_per_sec": 37.43,
+  "total_seconds": 16.81,
   "quotes": {
-    "p50_ms": 125.0,
-    "p95_ms": 265.0,
-    "p99_ms": 312.0
+    "p50_ms": 94.0,
+    "p95_ms": 235.0,
+    "p99_ms": 266.0
   },
   "transfers_api": {
-    "p50_ms": 485.0,
-    "p95_ms": 625.0,
-    "p99_ms": 687.0
+    "p50_ms": 406.0,
+    "p95_ms": 515.0,
+    "p99_ms": 562.0
   },
   "http_errors": 0,
   "double_payouts": 0,

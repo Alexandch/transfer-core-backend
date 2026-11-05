@@ -1,0 +1,78 @@
+{
+  "run_id": "d0f65605-cdfd-4ef0-b320-d4eb5d2f362a",
+  "client_id": "c_101",
+  "transfers": {
+    "ok": {
+      "transfer_id": "28014b05-4d66-435a-a148-97b94f54e190",
+      "status": "COMPLETED",
+      "observed_statuses": [
+        "COMPLETED",
+        "PROCESSING",
+        "RESERVED"
+      ],
+      "providers": [
+        "prov_alpha"
+      ],
+      "routing_config_version": "6e1b297be1533d98f120c1b1c8187ea876ed67a14caf599579a144e761a85944"
+    },
+    "decline": {
+      "transfer_id": "cd7f403a-3140-400c-87b1-c0f21ce206f2",
+      "status": "FAILED",
+      "observed_statuses": [
+        "FAILED",
+        "PROCESSING",
+        "RESERVED"
+      ],
+      "providers": [
+        "prov_alpha",
+        "prov_charlie",
+        "prov_bravo"
+      ],
+      "routing_config_version": "6e1b297be1533d98f120c1b1c8187ea876ed67a14caf599579a144e761a85944"
+    },
+    "error_5xx": {
+      "transfer_id": "aa681312-bac3-474b-a519-7f747c631b8a",
+      "status": "FAILED",
+      "observed_statuses": [
+        "FAILED",
+        "PROCESSING",
+        "RESERVED"
+      ],
+      "providers": [
+        "prov_alpha",
+        "prov_charlie",
+        "prov_bravo"
+      ],
+      "routing_config_version": "6e1b297be1533d98f120c1b1c8187ea876ed67a14caf599579a144e761a85944"
+    },
+    "slow": {
+      "transfer_id": "32b47966-8725-4ed4-811b-d731076052f7",
+      "status": "COMPLETED",
+      "observed_statuses": [
+        "COMPLETED",
+        "PROCESSING",
+        "RESERVED",
+        "UNKNOWN"
+      ],
+      "providers": [
+        "prov_alpha"
+      ],
+      "routing_config_version": "6e1b297be1533d98f120c1b1c8187ea876ed67a14caf599579a144e761a85944"
+    }
+  },
+  "balance_before": {
+    "available": "89980000.00",
+    "held": "0.00",
+    "spent": "20000.00",
+    "initial": "90000000.00"
+  },
+  "balance_after": {
+    "available": "89960000.00",
+    "held": "0.00",
+    "spent": "40000.00",
+    "initial": "90000000.00"
+  },
+  "idempotency": "passed",
+  "ledger": "passed",
+  "prometheus_scrape": "passed"
+}

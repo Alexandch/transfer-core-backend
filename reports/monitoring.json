@@ -1,0 +1,11 @@
+{
+  "version": "3.16.0",
+  "ui_http_status": 200,
+  "target": "up",
+  "scrape_interval": "5s",
+  "status_series": 6,
+  "max_held_minor_units": 4000000,
+  "latest_held_minor_units": 0,
+  "latest_spent_minor_units": 4000000,
+  "range_query": "passed"
+}
