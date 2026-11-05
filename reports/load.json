@@ -1,0 +1,19 @@
+{
+  "transfers": 300,
+  "concurrency": 20,
+  "accepted_transfers_per_sec": 34.66,
+  "total_seconds": 21.47,
+  "quotes": {
+    "p50_ms": 94.0,
+    "p95_ms": 2172.0,
+    "p99_ms": 2266.0
+  },
+  "transfers_api": {
+    "p50_ms": 375.0,
+    "p95_ms": 500.0,
+    "p99_ms": 531.0
+  },
+  "http_errors": 0,
+  "double_payouts": 0,
+  "unexplained_holds": 0
+}

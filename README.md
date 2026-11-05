@@ -1,15 +1,13 @@
 # Transfer Core
 
-Ядро сервиса международных переводов: котировка -> резерв -> выплата -> списание или возврат.
-Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL 18, Alembic, HTTPX, pytest. Фронтенда нет.
+Бэкенд международных переводов: котировка, резерв, выплата, сверка и окончательный расчёт.
+Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL 18, Alembic, HTTPX, Prometheus, pytest.
 
-**Происхождение данных.** Условие ссылается на отдельный `transfer-core-starter.zip`, но этот архив
-не был предоставлен. Поэтому `data/`, `examples/`, эмулятор и `scripts/chaos_run.py` созданы для этого
-решения по опубликованному контракту. Числа из иллюстрации PDF воспроизведены для RU-TH-BANK;
-остальные тарифы и провайдеры демонстрационные. Прохождение персональных примеров и официального
-chaos-тестера не заявляется.
+В проекте реализованы уровни 1-4. Соответствие пунктам задания:
+[REQUIREMENTS.md](REQUIREMENTS.md). Результаты проверок: [VERIFICATION.md](VERIFICATION.md).
+Данные, примеры и эмулятор подготовлены по контракту PDF; отдельный исходный starter не предоставлен.
 
-## Запуск с нуля
+## Запуск
 
 Нужен Docker с Compose v2 и Linux-контейнерами. Python на хосте не требуется.
 
@@ -17,38 +15,33 @@ chaos-тестера не заявляется.
 docker compose up
 ```
 
-Compose собирает образы, поднимает PostgreSQL, применяет миграции, добавляет тестовых клиентов,
-запускает эмулятор, API и worker. Сервис: http://localhost:8080,
-Swagger: http://localhost:8080/docs, проверка готовности: http://localhost:8080/health.
-Первый запуск требует доступа к реестрам Docker и PyPI.
+Команда собирает образы, запускает PostgreSQL, применяет миграции, добавляет начальные балансы,
+поднимает API, worker и эмулятор. Повторный запуск сохраняет балансы и историю.
+
+API: http://localhost:8080. Swagger: http://localhost:8080/docs.
+Готовность: http://localhost:8080/health. Эмулятор: http://localhost:9000.
+Порты PostgreSQL на хосте: 55438 для сервиса, 55439 для отдельной тестовой БД.
+Том PostgreSQL 18 монтируется в `/var/lib/postgresql`.
 
 В фоне: `docker compose up -d`. Логи: `docker compose logs -f api worker`.
-Остановка с сохранением балансов: `docker compose down`.
-`docker compose down -v` **удаляет данные этого проекта** и возвращает исходные балансы при следующем запуске.
+Остановка: `docker compose down`. Команда `docker compose down -v` удаляет данные проекта.
+Пароли и HMAC в Compose - локальные демонстрационные значения. Переменные перечислены в .env.example.
 
-Порты хоста: API 8080, эмулятор 9000, БД 55438. База внутри сети Compose использует 5432.
-Для PostgreSQL 18 том подключён к `/var/lib/postgresql`.
-Значения паролей и HMAC в Compose - публичные локальные заглушки, не реальные секреты.
-
-## Тесты одной командой
+## Тесты
 
 ```sh
 docker compose --profile test run --build --rm tests
 ```
 
-Используется отдельная PostgreSQL 18 в tmpfs; рабочая БД не затрагивается.
-Проверяются оба режима расчёта, SOURCE/TARGET-комиссии, 0/2/3 знака валют,
-округление, все обязательные коды ошибок, выбор и смена провайдера, сценарии
-ok/decline/error_5xx/slow, конкурентные запросы и восстановление после сбоя.
-
-Проверка стиля:
+Тесты используют отдельную PostgreSQL 18 в tmpfs. Рабочая БД не очищается.
+Версии зависимостей зафиксированы в uv.lock.
 
 ```sh
 docker compose --profile test run --rm tests ruff check app tests scripts migrations
 docker compose --profile test run --rm tests ruff format --check app tests scripts migrations
 ```
 
-При локальной разработке с [uv](https://docs.astral.sh/uv/):
+Локальная разработка с uv:
 
 ```sh
 uv sync --frozen --python 3.12
@@ -58,13 +51,10 @@ uv run python -m app.bootstrap
 uv run pytest -q
 ```
 
-Тестовый порт - 55439. `TEST_DATABASE_URL` переопределяет адрес тестовой БД; её имя должно
-оканчиваться на `_test`: перед каждым интеграционным тестом таблицы в ней очищаются.
-Точная версия зависимостей зафиксирована в `uv.lock`.
+TEST_DATABASE_URL переопределяет тестовую БД; имя должно оканчиваться на `_test`.
+Её таблицы очищаются перед каждым интеграционным тестом.
 
-## Пример запроса
-
-PowerShell:
+## Пример PowerShell
 
 ```powershell
 $quote = Invoke-RestMethod http://localhost:8080/quotes -Method Post `
@@ -81,92 +71,94 @@ Invoke-RestMethod "http://localhost:8080/transfers/$($transfer.transfer_id)"
 Invoke-RestMethod http://localhost:8080/clients/c_001/balance
 ```
 
-Для запроса на 10000.00 RUB: комиссия 150.00 RUB, конвертация 9850.00 RUB,
-выплата 4137.00 THB. `POST /transfers` сразу возвращает **202**, обычно со статусом `RESERVED`.
-Итог виден через GET. Новый ключ нужен для нового запроса; повтор с прежним телом и ключом
-возвращает прежний перевод даже после истечения котировки. Каждая котировка расходуется один раз.
-
-`X-Scenario`: `ok`, `decline`, `error_5xx`, `slow`. Этот заголовок разрешён в демонстрационном
-Compose (`ALLOW_SCENARIOS=true`); вне демонстрации его следует отключить.
-Сценарий применяется ко всем провайдерам попытки: поэтому полный decline/error_5xx заканчивается
-`FAILED`, а отдельный отказ с успешным запасным провайдером проверяется интеграционным тестом.
+10000.00 RUB дают комиссию 150.00 RUB, конвертацию 9850.00 RUB и выплату 4137.00 THB.
+POST /transfers сразу возвращает 202. Результат, история и попытки доступны через GET.
+Повтор с прежним телом и ключом возвращает прежний перевод, в том числе после истечения котировки.
+Котировка используется один раз. Новый перевод требует новой котировки и нового ключа.
 
 ## API
 
 | Метод | Путь | Результат |
 |---|---|---|
-| POST | `/quotes` | 201, сохранённая котировка |
-| GET | `/quotes/{quote_id}` | 200, та же цена и TTL |
-| POST | `/transfers` | 202, обязательный `Idempotency-Key` |
-| GET | `/transfers/{transfer_id}` | Цена, статус, история, попытки |
-| GET | `/clients/{client_id}/balance` | available / held / spent / initial по валютам |
-| POST | `/webhooks/{provider_id}` | HMAC, дедупликация, запуск сверки |
-| GET | `/transfers/{transfer_id}/routing` | Кандидаты, оценки, причины исключения |
-| GET | `/health` | Проверка API и БД |
-| GET | `/metrics` | Число переводов по статусам в JSON |
+| POST | /quotes | 201, сохранённая цена и expires_at |
+| GET | /quotes/{quote_id} | Та же котировка, включая истёкшую |
+| POST | /transfers | 202, обязательный Idempotency-Key |
+| GET | /transfers/{transfer_id} | Статус, review_reason, история, попытки и наблюдения |
+| GET | /clients/{client_id}/balance | available / held / spent / initial по валютам |
+| POST | /webhooks/{provider_id} | HMAC, дедупликация и запуск сверки |
+| GET | /transfers/{transfer_id}/routing | Оценки, маржа, исключения и config_version |
+| GET | /metrics | Prometheus: состояния, ручная проверка и отправки с transfer_id |
+| GET | /stats | JSON-число переводов по статусам |
+| GET | /health | Проверка API и БД |
 
-Деньги в API - строки с точностью из `currencies.json`, включая входные суммы.
-Клиентские ошибки возвращаются в формате
+Денежные поля - строки с точностью валюты из currencies.json. Ошибка:
 `{"error":{"code":"...","message":"...","details":{}}}`.
 
 | HTTP | Коды |
 |---|---|
-| 422 | VALIDATION_ERROR, UNSUPPORTED_DIRECTION, AMOUNT_BELOW_MIN, AMOUNT_ABOVE_MAX, RATE_UNAVAILABLE при отсутствии свежего пути FX |
+| 422 | VALIDATION_ERROR, UNSUPPORTED_DIRECTION, AMOUNT_BELOW_MIN, AMOUNT_ABOVE_MAX, RATE_UNAVAILABLE |
 | 404 | QUOTE_NOT_FOUND, CLIENT_NOT_FOUND, TRANSFER_NOT_FOUND, PROVIDER_NOT_FOUND |
 | 409 | QUOTE_EXPIRED, QUOTE_ALREADY_USED, IDEMPOTENCY_CONFLICT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, NO_ELIGIBLE_PROVIDER, WEBHOOK_CONFLICT |
 | 401 | INVALID_SIGNATURE |
 | 413 | VALIDATION_ERROR для слишком большого webhook |
-| 503 | RATE_UNAVAILABLE при недоступности источника курсов |
+| 503 | RATE_UNAVAILABLE при недоступности курсов, CONFIG_INVALID при неверном конфиге провайдеров |
 
-GET истёкшей котировки возвращает сохранённую цену; использовать её в новом переводе нельзя.
-Подпись webhook: hex HMAC-SHA256 исходных байтов тела, ключ `PROVIDER_WEBHOOK_SECRET`.
-Одинаковый event_id с изменённым телом возвращает WEBHOOK_CONFLICT.
+Подпись webhook: hex HMAC-SHA256 исходных байтов тела, ключ PROVIDER_WEBHOOK_SECRET.
+Одинаковый event_id с другим телом возвращает WEBHOOK_CONFLICT. Неизвестные reference сохраняются.
 
-## Самопроверка с эмулятором
+## Сценарии и chaos
 
-Для включения chaos в PowerShell:
+X-Scenario: ok, decline, error_5xx, slow. В Compose разрешён ALLOW_SCENARIOS=true.
+Полный decline/error_5xx применяется ко всем провайдерам и завершается FAILED. В error_5xx
+эмулятор сохраняет отказ, возвращает 503 и подтверждает FAILED при сверке по reference.
+Slow принимает выплату, но отвечает через 30 секунд. Worker использует таймаут 3 секунды.
+
+```sh
+uv run python scripts/smoke.py
+```
+
+Chaos в PowerShell:
 
 ```powershell
 $env:MOCK_MODE = 'chaos'
 $env:MOCK_SEED = '42'
-docker compose up -d --force-recreate mock-provider
-docker compose up -d --scale worker=4
-uv run python scripts/chaos_run.py --transfers 300
+docker compose up -d --no-deps --force-recreate mock-provider
+docker compose up -d --no-deps --scale worker=4 worker
+uv run python scripts/chaos_run.py --transfers 300 --timeout 240
 ```
 
-Без Python на хосте, после включения chaos:
+Без Python на хосте:
 
 ```sh
 docker compose run --rm api python scripts/chaos_run.py --transfers 300 --api http://api:8080 --provider http://mock-provider:9000
 ```
 
-Скрипт отправляет запросы параллельно, повторяет идемпотентные POST, ожидает итоговые статусы,
-сравнивает reference, сумму и валюту с реальными записями выплат эмулятора и проверяет балансы.
-Используется отдельный демонстрационный клиент `c_load`. Не запускайте другой генератор переводов
-для того же клиента одновременно: скрипт сравнивает изменение его баланса за весь прогон.
-`MOCK_SEED` определяет поведение для reference, но UUID переводов случайны, поэтому новый прогон
-не обязан воспроизвести те же сценарии в том же порядке.
+Chaos включает 5xx до/после принятия, обрыв HTTP после принятия, задержки, отстающий GET,
+временно противоречивый GET, испорченный ответ, отсутствие callback, дубли, старые и неизвестные события.
+Выплаты и ключи эмулятора сохраняются в PostgreSQL и переживают рестарт.
+Скрипт сверяет сумму/валюту/reference с фактическим ledger и проверяет баланс клиента c_load.
+MOCK_SEED определяет сценарий для reference; новые случайные UUID дают другое распределение.
 
-Эмулятор хранит выплаты в схеме `mock` PostgreSQL и переживает перезапуск. Он умеет отказ,
-5xx до/после принятия, ответ через 30 секунд, испорченный ответ, отсутствие callback,
-повторный и запоздавший webhook. `/rates` выдаёт значения снимка `data/rates.json` со свежим
-временем публикации: это тестовый источник, а не реальные рыночные данные.
+## Нагрузка
 
-## Структура
-
-```text
-app/money.py, pricing.py, rates.py  расчёт и FX без HTTP/БД
-app/routing.py                    фильтрация, маржа, ранжирование
-app/service.py, db.py              транзакции, резерв, баланс, состояния
-app/provider.py                   HTTP-адаптер провайдера
-app/worker.py                     очередь в PostgreSQL, lease, сверка
-app/api.py                        HTTP-контракт
-app/mock_provider.py              собственный эмулятор
-migrations/                      версионируемая схема Alembic
-tests/                           модульные и PostgreSQL-тесты
-data/, examples/                 демонстрационный набор
+```sh
+uv run python scripts/load_run.py --transfers 300 --concurrency 20 --output output/load-result.json
 ```
 
-Обоснования: [DECISIONS.md](DECISIONS.md). Точные правила: [ASSUMPTIONS.md](ASSUMPTIONS.md).
-Границы решения: [LIMITS.md](LIMITS.md). Разбор для защиты: [DEFENSE.md](DEFENSE.md).
-Отчёт фактической проверки: [VERIFICATION.md](VERIFICATION.md).
+Сценарий измеряет throughput создания переводов, p50/p95/p99 отдельно для quotes и transfers,
+ожидает завершения и проверяет выплаты по ledger и расход баланса. Использует X-Scenario=ok.
+Нагрузочный и chaos-прогоны используют c_load и выполняются последовательно.
+
+## Конфигурация и модули
+
+providers.json перечитывается без перезапуска. Перед каждой новой попыткой заново проверяются
+доступность, лимиты, комиссия и маржа. Уже опробованные провайдеры исключаются.
+Оценки каждой попытки сохраняются в selections плана маршрута; цена котировки остаётся прежней.
+Конфигурация валидируется; её SHA-256 сохраняется в плане маршрута как config_version.
+При ошибке конфигурации резерв сохраняется, перевод получает NEEDS_REVIEW с причиной.
+
+money.py/pricing.py/rates.py - расчёт; routing.py - выбор; service.py/db.py - транзакции;
+provider.py - HTTP; worker.py - исполнение и сверка; mock_provider.py - эмулятор.
+
+[Архитектура](ARCHITECTURE.md), [решения](DECISIONS.md), [допущения](ASSUMPTIONS.md),
+[ограничения](LIMITS.md), [требования](REQUIREMENTS.md).
