@@ -5,7 +5,7 @@
 | 1 | POST/GET quotes, сохранение и TTL | api.py, Quote; test_quote_persists, test_transfer_errors |
 | 1 | SOURCE/TARGET, процент + fixed + min, обе валюты комиссии | pricing.py, money.py; test_pricing.py |
 | 1 | Точность валют, округление, лимиты, ошибки | money.py, rates.py; test_currency_precision, test_amount_errors, test_mandatory_quote_errors |
-| 1 | Детерминизм и примеры | test_deterministic, test_examples.py, examples/quotes.json |
+| 1 | Детерминизм и официальные примеры | test_deterministic, test_starter.py: 10 examples через расчёт и HTTP |
 | 2 | Перевод по сохранённой цене | service.py; test_quote_price_is_frozen |
 | 2 | Идемпотентность и конфликт тела | UNIQUE client/key + hash; test_idempotency_before_during_after_and_conflict |
 | 2 | State machine и резерв | transition, settle; test_scenarios_and_balance_conservation |
@@ -18,12 +18,12 @@
 | 3 | Падение после отправки, рестарт, истёкший lease | test_restart_after_send_before_result, test_old_lease_owner_cannot_submit_or_settle |
 | 3 | Фоновая сверка и требует проверки | Worker + review_reason; test_review_keeps_hold_and_can_recover, test_reliability.py |
 | 3 | Суточный лимит и UTC-полночь | DailyUsage; test_parallel_balance_and_daily_limit, test_failure_releases_usage_from_creation_day |
-| 3 | Chaos и фактический ledger | scripts/chaos_run.py, mock_provider.py; результаты в VERIFICATION.md |
+| 3 | Официальный chaos и фактический ledger | исходные scripts/chaos_run.py и mock-provider/; результаты в VERIFICATION.md |
 | 4 | Структурные логи и метрики с transfer_id | observability.py, /metrics; test_operations.py |
 | 4 | Конфиг без редеплоя | Catalog, provider_config.py, config_version; test_provider_config_reload_without_app_restart |
 | 4 | Миграции | migrations/versions; upgrade на пустой и существующей БД, alembic check |
 | 4 | Нагрузочный сценарий | scripts/load_run.py: concurrency, throughput, p50/p95/p99, ledger и баланс |
 | 4 | Почему выбран провайдер | GET /transfers/{id}/routing: оценки, маржа, исключения, версия конфигурации |
 
-Набор данных и эмулятор подготовлены в этом репозитории по контракту PDF.
+Набор данных, примеры, эмулятор и chaos-тестер взяты из starter и сверяются с starter-manifest.json.
 Результаты запусков и параметры среды приведены в VERIFICATION.md.

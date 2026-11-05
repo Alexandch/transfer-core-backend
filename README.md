@@ -5,7 +5,8 @@ Python 3.12, FastAPI, SQLAlchemy 2, PostgreSQL 18, Alembic, HTTPX, Prometheus, p
 
 В проекте реализованы уровни 1-4. Соответствие пунктам задания:
 [REQUIREMENTS.md](REQUIREMENTS.md). Результаты проверок: [VERIFICATION.md](VERIFICATION.md).
-Данные, примеры и эмулятор подготовлены по контракту PDF; отдельный исходный starter не предоставлен.
+Данные, 10 примеров, эмулятор и scripts/chaos_run.py взяты из предоставленного starter без изменений.
+Их контрольные суммы перечислены в starter-manifest.json и проверяются тестом.
 
 ## Запуск
 
@@ -35,6 +36,12 @@ docker compose --profile test run --build --rm tests
 
 Тесты используют отдельную PostgreSQL 18 в tmpfs. Рабочая БД не очищается.
 Версии зависимостей зафиксированы в uv.lock.
+
+Проверка официальных примеров через запущенный API:
+
+```sh
+uv run python scripts/check_examples.py --json output/official-examples.json
+```
 
 ```sh
 docker compose --profile test run --rm tests ruff check app tests scripts migrations
@@ -75,6 +82,8 @@ Invoke-RestMethod http://localhost:8080/clients/c_001/balance
 POST /transfers сразу возвращает 202. Результат, история и попытки доступны через GET.
 Повтор с прежним телом и ключом возвращает прежний перевод, в том числе после истечения котировки.
 Котировка используется один раз. Новый перевод требует новой котировки и нового ключа.
+Если нет подходящего провайдера, перевод завершается FAILED с возвратом резерва;
+причины исключения провайдеров доступны через /routing.
 
 ## API
 
@@ -98,7 +107,7 @@ POST /transfers сразу возвращает 202. Результат, ист�
 |---|---|
 | 422 | VALIDATION_ERROR, UNSUPPORTED_DIRECTION, AMOUNT_BELOW_MIN, AMOUNT_ABOVE_MAX, RATE_UNAVAILABLE |
 | 404 | QUOTE_NOT_FOUND, CLIENT_NOT_FOUND, TRANSFER_NOT_FOUND, PROVIDER_NOT_FOUND |
-| 409 | QUOTE_EXPIRED, QUOTE_ALREADY_USED, IDEMPOTENCY_CONFLICT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, NO_ELIGIBLE_PROVIDER, WEBHOOK_CONFLICT |
+| 409 | QUOTE_EXPIRED, QUOTE_ALREADY_USED, IDEMPOTENCY_CONFLICT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, WEBHOOK_CONFLICT |
 | 401 | INVALID_SIGNATURE |
 | 413 | VALIDATION_ERROR для слишком большого webhook |
 | 503 | RATE_UNAVAILABLE при недоступности курсов, CONFIG_INVALID при неверном конфиге провайдеров |
@@ -109,8 +118,10 @@ POST /transfers сразу возвращает 202. Результат, ист�
 ## Сценарии и chaos
 
 X-Scenario: ok, decline, error_5xx, slow. В Compose разрешён ALLOW_SCENARIOS=true.
-Полный decline/error_5xx применяется ко всем провайдерам и завершается FAILED. В error_5xx
-эмулятор сохраняет отказ, возвращает 503 и подтверждает FAILED при сверке по reference.
+Полный decline/error_5xx применяется ко всем провайдерам и завершается FAILED.
+PROVIDER_PROTOCOL=starter включает обработку подтверждённого в исходниках отказа первого POST
+с кодом INTERNAL_ERROR. Ошибки повторного POST, 504, обрыв связи и отстающий GET остаются
+неоднозначными: повторяется прежний provider key, резерв сохраняется.
 Slow принимает выплату, но отвечает через 30 секунд. Worker использует таймаут 3 секунды.
 
 ```sh
@@ -124,20 +135,25 @@ $env:MOCK_MODE = 'chaos'
 $env:MOCK_SEED = '42'
 docker compose up -d --no-deps --force-recreate mock-provider
 docker compose up -d --no-deps --scale worker=4 worker
-uv run python scripts/chaos_run.py --transfers 300 --timeout 240
+New-Item -ItemType Directory -Force output | Out-Null
+uv run python scripts/chaos_run.py --transfers 300 --seed 42 --api http://127.0.0.1:8080 --mock http://127.0.0.1:9000 --json output/official-chaos.json
 ```
 
 Без Python на хосте:
 
 ```sh
-docker compose run --rm api python scripts/chaos_run.py --transfers 300 --api http://api:8080 --provider http://mock-provider:9000
+docker compose run --rm api python scripts/chaos_run.py --transfers 300 --api http://api:8080 --mock http://mock-provider:9000
 ```
 
-Chaos включает 5xx до/после принятия, обрыв HTTP после принятия, задержки, отстающий GET,
-временно противоречивый GET, испорченный ответ, отсутствие callback, дубли, старые и неизвестные события.
-Выплаты и ключи эмулятора сохраняются в PostgreSQL и переживают рестарт.
-Скрипт сверяет сумму/валюту/reference с фактическим ledger и проверяет баланс клиента c_load.
-MOCK_SEED определяет сценарий для reference; новые случайные UUID дают другое распределение.
+Официальный chaos включает 5xx до/после принятия, обрыв связи, зависший ответ, задержку видимости
+в GET, устаревший PROCESSING, потерянные, поддельные, повторные и противоречивые webhook.
+Скрипт проверяет выплаты по recipient/account, суммы, валюты, идемпотентность и балансы клиентов.
+Параметры: --settle-timeout (420 секунд по умолчанию), --ledger-grace (30 секунд), --json.
+MOCK_SEED определяет поведение провайдера, --seed - распределение запросов генератора.
+
+Эмулятор хранит выплаты и ключи в памяти: перезапуск контейнера сбрасывает его ledger.
+Смена режима и новые прогоны выполняются после завершения текущих операций.
+БД приложения сохраняется в отдельном томе db-starter-data.
 
 ## Нагрузка
 
@@ -147,7 +163,8 @@ uv run python scripts/load_run.py --transfers 300 --concurrency 20 --output outp
 
 Сценарий измеряет throughput создания переводов, p50/p95/p99 отдельно для quotes и transfers,
 ожидает завершения и проверяет выплаты по ledger и расход баланса. Использует X-Scenario=ok.
-Нагрузочный и chaos-прогоны используют c_load и выполняются последовательно.
+Нагрузочный прогон использует официального клиента c_101; --client задаёт другого клиента.
+Нагрузочный и chaos-прогоны выполняются последовательно, чтобы расход баланса был однозначен.
 
 ## Конфигурация и модули
 
@@ -158,7 +175,8 @@ providers.json перечитывается без перезапуска. Пе�
 При ошибке конфигурации резерв сохраняется, перевод получает NEEDS_REVIEW с причиной.
 
 money.py/pricing.py/rates.py - расчёт; routing.py - выбор; service.py/db.py - транзакции;
-provider.py - HTTP; worker.py - исполнение и сверка; mock_provider.py - эмулятор.
+provider.py - HTTP; worker.py - исполнение и сверка; mock-provider/ - официальный эмулятор.
+Изолированные искусственные данные регрессионных тестов находятся в tests/fixtures/demo/.
 
 [Архитектура](ARCHITECTURE.md), [решения](DECISIONS.md), [допущения](ASSUMPTIONS.md),
 [ограничения](LIMITS.md), [требования](REQUIREMENTS.md).

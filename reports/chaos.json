@@ -1,10 +1,12 @@
 {
-  "transfers": 300,
-  "statuses": {
-    "COMPLETED": 299,
-    "FAILED": 1
+  "run_id": "0248DFB0",
+  "counters": {
+    "submitted": 300,
+    "double_submits": 44,
+    "final_success": 227,
+    "final_failure": 72,
+    "final_review": 1,
+    "duration_sec": 98
   },
-  "double_payouts": 0,
-  "unexplained_holds": 0,
-  "emulator": "locally-authored-demo"
+  "violations": {}
 }

@@ -1,14 +1,22 @@
 # Проверка
 
-5 ноября 2026 года. Docker Desktop, Linux-контейнеры, Python 3.12.16, PostgreSQL 18.6.
-Локальная Docker-среда: 16 CPU, около 8 ГБ памяти. Сквозные прогоны - четыре worker.
+5 ноября 2026 года. Приложение: Python 3.12.16 и PostgreSQL 18.6.
+Официальный mock-provider и chaos_run.py запущены из присланного starter без изменений.
+Docker-среда: 16 CPU, около 8 ГБ памяти; сквозные прогоны - четыре worker.
 
-## Тесты и статические проверки
+## Исходный набор
+
+Архив: transfer-core-starter (2).zip.
+SHA-256: `0b912b15e7a9fc4e2c322c2ab5ab656b31a8fab30eb2cc5b1da97b5815170568`.
+25 исходных файлов data/, examples/, mock-provider/ и scripts/chaos_run.py проверяются
+по starter-manifest.json. Compose адаптирован к PostgreSQL 18 и реализации приложения.
+
+## Тесты
 
 ```text
 docker compose --profile test run --build --rm tests
-83 passed, 1 warning in 10.16s
-TOTAL: 1071 statements, 215 missed, 80% coverage
+110 passed, 1 warning in 16.38s
+TOTAL: 932 statements, 68 missed, 93% coverage
 
 ruff check app tests scripts migrations: All checks passed!
 ruff format --check app tests scripts migrations: 34 files already formatted
@@ -16,18 +24,15 @@ alembic check: No new upgrade operations detected.
 git diff --check: успешно
 ```
 
-Pricing - 97%, money - 96%, rates/routing/provider - 100%, service - 93%, worker - 87%,
-API - 92%. Общий процент включает эмулятор, исполняемый в отдельном контейнере во время
-сквозных проверок и не измеряемый pytest-cov в процессе тестов.
+Все 10 официальных примеров проверены через расчёт и HTTP. Отдельный сквозной запуск
+scripts/check_examples.py на работающем API: 10 passed, 0 failed.
+Дополнительно проверены исходные регрессионные случаи, баланс, идемпотентность, сбои,
+лимит в USD при списании RUB, счета RUB/KWD с общим лимитом и направление без провайдеров.
 Предупреждение Starlette относится к будущей смене транспорта TestClient;
-зафиксированные версии проходят тесты.
+зафиксированные версии совместимы. Официальный код исключён из форматирования и линтинга,
+чтобы сохранять его исходные байты.
 
-Миграции проверены на тестовой БД и на существующей БД с историей переводов.
-Схема соответствует моделям после upgrade.
-
-## Основные HTTP-сценарии
-
-`scripts/smoke.py` обращается к API, отдельному эмулятору и отдельным worker.
+## Официальные сценарии
 
 | Сценарий | Итог | Попыток |
 |---|---|---:|
@@ -36,36 +41,41 @@ API - 92%. Общий процент включает эмулятор, испо
 | error_5xx | FAILED | 3 |
 | slow, ответ через 30 секунд | COMPLETED | 1 |
 
-## Chaos
+## Официальный chaos
 
-Расширенный эмулятор: потеря HTTP после принятия, 5xx, отстающий GET, временный неверный FAILED,
-повторные/старые/неизвестные webhook, испорченный ответ, отсутствие callback, slow.
-
-Финальный прогон: MOCK_MODE=chaos, MOCK_SEED=17, четыре worker,
-`scripts/chaos_run.py --transfers 300 --timeout 240`.
-
-```json
-{"transfers":300,"statuses":{"COMPLETED":299,"FAILED":1},"double_payouts":0,"unexplained_holds":0}
-```
-
-Дополнительный прогон с seed=42: 297 COMPLETED, 3 FAILED; двойных выплат и необъяснимых
-резервов также нет. Сверка проверяет число, сумму и валюту фактических выплат по reference,
-conservation баланса и соответствие изменения spent/held итогам переводов.
-
-## Нагрузка
-
-`scripts/load_run.py --transfers 300 --concurrency 20`:
+MOCK_MODE=chaos, MOCK_SEED=42.
+`scripts/chaos_run.py --transfers 300 --seed 42 --api http://127.0.0.1:8080 --mock http://127.0.0.1:9000 --json output/official-chaos.json`.
+Девять доступных направлений, исходные клиенты и тарифы starter.
 
 | Показатель | Результат |
 |---|---:|
-| Принято переводов в секунду | 34.66 |
-| Весь прогон с ожиданием и сверкой | 21.47 сек |
-| Quotes p50 / p95 / p99 | 94 / 2172 / 2266 мс |
-| Transfers API p50 / p95 / p99 | 375 / 500 / 531 мс |
+| Создано переводов | 300 |
+| Успешных | 227 |
+| Неуспешных | 72 |
+| Требуют проверки | 1 |
+| Двойных запросов с одним ключом | 44 |
+| Длительность прогона | 98 сек |
+| Нарушений во всех категориях | 0 |
+
+RESULT: OK. Проверены double_payouts, stuck_reserves, balance_invariant, failed_but_paid,
+success_without_payout, amount_mismatch, unaccounted_payouts, idempotency, stuck_transfers и api_errors.
+
+## Нагрузка на официальном эмуляторе
+
+300 переводов, concurrency=20, X-Scenario=ok, клиент c_003, адреса 127.0.0.1.
+Суточный лимит c_003 задан в USD, списания выполняются в RUB.
+
+| Показатель | Результат |
+|---|---:|
+| Принято переводов в секунду | 30.82 |
+| Весь прогон с ожиданием и сверкой | 20.59 сек |
+| Quotes p50 / p95 / p99 | 125.0 / 265.0 / 312.0 мс |
+| Transfers API p50 / p95 / p99 | 485.0 / 625.0 / 687.0 мс |
 | HTTP-ошибки | 0 |
 | Двойные выплаты | 0 |
 | Необъяснимые резервы | 0 |
 
-Все 300 переводов COMPLETED. Проверены фактические ledger провайдеров и расход баланса.
-Машинные отчёты: [chaos](reports/chaos.json), [нагрузка](reports/load.json), [smoke](reports/smoke.json).
-Соответствие проверок пунктам задания: [REQUIREMENTS.md](REQUIREMENTS.md).
+Все 300 переводов COMPLETED; ledger и расход баланса сверены.
+Отчёты: [examples](reports/examples.json), [chaos](reports/chaos.json),
+[нагрузка](reports/load.json), [smoke](reports/smoke.json).
+Соответствие заданию: [REQUIREMENTS.md](REQUIREMENTS.md).
