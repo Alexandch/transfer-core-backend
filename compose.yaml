@@ -19,7 +19,7 @@ services:
       POSTGRES_PASSWORD: transfer_dev
       POSTGRES_DB: transfer
     ports: ["127.0.0.1:55438:5432"]
-    volumes: ["db-starter-data:/var/lib/postgresql"]
+    volumes: ["db-starter-release-data:/var/lib/postgresql"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U transfer -d transfer"]
       interval: 2s
@@ -88,4 +88,4 @@ services:
       test-db: {condition: service_healthy}
 
 volumes:
-  db-starter-data:
+  db-starter-release-data:
