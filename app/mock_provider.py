@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     JSON,
@@ -65,7 +65,7 @@ def view(row) -> dict:
         "payout_id": row["id"],
         "reference": row["reference"],
         "status": row["status"],
-        "failure_code": None,
+        "failure_code": "INTERNAL_ERROR" if row["status"] == "FAILED" else None,
     }
 
 
@@ -106,6 +106,13 @@ async def callbacks() -> None:
                                     "status": "PROCESSING",
                                 },
                             ]
+                            events.append(
+                                {
+                                    **event,
+                                    "event_id": event["event_id"] + "_unknown",
+                                    "reference": "unknown-" + row["reference"],
+                                }
+                            )
                         for item in events:
                             raw = json.dumps(item, separators=(",", ":")).encode()
                             signature = hmac.new(
@@ -199,6 +206,9 @@ async def create_payout(
             "duplicate",
             "no_webhook",
             "malformed",
+            "disconnect_after_commit",
+            "lagging_lookup",
+            "inconsistent_lookup",
         ]
         hashed = hashlib.sha256((os.getenv("MOCK_SEED", "42") + body.reference).encode()).digest()
         scenario = variants[int.from_bytes(hashed[:2], "big") % len(variants)]
@@ -227,8 +237,6 @@ async def create_payout(
             return JSONResponse(
                 {"code": "RECIPIENT_ACCOUNT_INVALID", "message": "Demo decline"}, status_code=422
             )
-        if scenario == "error_5xx":
-            return JSONResponse({"code": "INTERNAL_ERROR"}, status_code=503)
         delay = int(os.getenv("MOCK_SLOW_SEC", "30")) if scenario == "slow" else 1
         connection.execute(
             insert(payouts)
@@ -239,7 +247,7 @@ async def create_payout(
                 reference=body.reference,
                 fingerprint=fingerprint,
                 payload=payload,
-                status="PROCESSING",
+                status="FAILED" if scenario == "error_5xx" else "PROCESSING",
                 due_at=now() + timedelta(seconds=delay),
                 scenario=scenario,
             )
@@ -257,8 +265,17 @@ async def create_payout(
         )
     if scenario == "slow":
         await asyncio.sleep(delay)
-    elif scenario == "after_commit_5xx":
+    elif scenario == "error_5xx":
+        return JSONResponse({"code": "INTERNAL_ERROR"}, status_code=503)
+    elif scenario in {"after_commit_5xx", "lagging_lookup"}:
         return JSONResponse({"code": "LOST_RESPONSE"}, status_code=500)
+    elif scenario == "disconnect_after_commit":
+
+        async def interrupted():
+            yield b'{"payout_id":'
+            raise ConnectionError("Simulated provider connection loss after acceptance")
+
+        return StreamingResponse(interrupted(), media_type="application/json")
     elif scenario == "malformed":
         return JSONResponse({"unexpected": "response after successful acceptance"}, status_code=201)
     return JSONResponse(view(row), status_code=201)
@@ -281,6 +298,12 @@ def lookup(provider_id: str, reference: str):
         )
         if row is None:
             raise HTTPException(404)
+        if row["scenario"] == "lagging_lookup" and now() < row["due_at"] + timedelta(seconds=3):
+            raise HTTPException(404)
+        if row["scenario"] == "inconsistent_lookup" and now() < row["due_at"] + timedelta(
+            seconds=3
+        ):
+            return {**view(row), "status": "FAILED", "failure_code": "TRANSIENT_INCONSISTENCY"}
         return view(row)
 
 

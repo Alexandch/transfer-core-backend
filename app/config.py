@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     poll_interval_sec: int = 2
     lease_sec: int = 20
     review_after_sec: int = 120
+    max_poll_interval_sec: int = 30
 
 
 @lru_cache

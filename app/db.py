@@ -83,6 +83,7 @@ class Transfer(Base):
     next_run: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_owner: Mapped[str | None] = mapped_column(String(36))
+    review_reason: Mapped[str | None] = mapped_column(String(150))
 
 
 class Attempt(Base):
@@ -99,6 +100,19 @@ class Attempt(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     sends: Mapped[int] = mapped_column(Integer, default=0)
     uncertain: Mapped[bool] = mapped_column(Boolean, default=False)
+    failure_confirmations: Mapped[int] = mapped_column(Integer, default=0)
+    conflict: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AttemptObservation(Base):
+    __tablename__ = "attempt_observations"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("attempts.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    result: Mapped[str | None] = mapped_column(String(150))
+    source: Mapped[str] = mapped_column(String(20))
+    payout_id: Mapped[str | None] = mapped_column(String(150))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class WebhookEvent(Base):

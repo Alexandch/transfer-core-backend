@@ -9,7 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.catalog import Catalog
 from app.clock import iso, now
-from app.db import Account, Attempt, Client, DailyUsage, Quote, Transfer, WebhookEvent
+from app.db import (
+    Account,
+    Attempt,
+    AttemptObservation,
+    Client,
+    DailyUsage,
+    Quote,
+    Transfer,
+    WebhookEvent,
+)
 from app.errors import DomainError
 from app.money import D, fmt, minor, quantize
 from app.rates import Rates
@@ -55,7 +64,7 @@ def seed(session: Session, catalog: Catalog) -> None:
 
 def transition(transfer: Transfer, status: str, actor: str, reason: str) -> None:
     allowed = {
-        "RESERVED": {"PROCESSING", "FAILED"},
+        "RESERVED": {"PROCESSING", "NEEDS_REVIEW", "FAILED"},
         "PROCESSING": {"UNKNOWN", "NEEDS_REVIEW", "COMPLETED", "FAILED"},
         "UNKNOWN": {"PROCESSING", "NEEDS_REVIEW", "COMPLETED", "FAILED"},
         "NEEDS_REVIEW": {"PROCESSING", "UNKNOWN", "COMPLETED", "FAILED"},
@@ -198,6 +207,7 @@ def transfer_view(session: Session, transfer: Transfer) -> dict:
         "quote_id": transfer.quote_id,
         "client_id": transfer.client_id,
         "status": transfer.status,
+        "review_reason": transfer.review_reason,
         "source_amount": quote.payload["source_amount"],
         "target_amount": quote.payload["target_amount"],
         "fee": quote.payload["fee"],
@@ -214,6 +224,20 @@ def transfer_view(session: Session, transfer: Transfer) -> dict:
                 "created_at": iso(a.created_at),
                 "updated_at": iso(a.updated_at),
                 "sends": a.sends,
+                "observations": [
+                    {
+                        "status": o.status,
+                        "result": o.result,
+                        "source": o.source,
+                        "payout_id": o.payout_id,
+                        "at": iso(o.observed_at),
+                    }
+                    for o in session.scalars(
+                        select(AttemptObservation)
+                        .where(AttemptObservation.attempt_id == a.id)
+                        .order_by(AttemptObservation.id)
+                    )
+                ],
             }
             for a in attempts
         ],
@@ -261,6 +285,16 @@ def record_webhook(session: Session, provider_id: str, payload: dict) -> dict:
     if attempt is None or attempt.provider_id != provider_id:
         return {"accepted": True, "unknown_reference": True}
     transfer = session.get(Transfer, attempt.transfer_id, with_for_update=True)
+    if (
+        attempt.payout_id
+        and attempt.payout_id != payload["payout_id"]
+        or attempt.status == "FAILED"
+        and payload["status"] == "COMPLETED"
+    ):
+        transfer.review_reason = "CONFLICTING_WEBHOOK"
+        if transfer.status not in TERMINAL:
+            attempt.conflict = True
+            transition(transfer, "NEEDS_REVIEW", "webhook", "CONFLICTING_WEBHOOK")
     if transfer.status not in TERMINAL:
         # Events are durable wake-up hints. Authoritative GET handles duplicates and reordering.
         transfer.next_run = now()

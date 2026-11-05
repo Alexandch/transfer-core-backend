@@ -74,4 +74,5 @@ def select_providers(quote: dict, catalog: Catalog, rates: Rates, at: datetime) 
         "candidates": eligible,
         "rejected": rejected,
         "policy": "0.50*cost/source + 0.35*(1-success_rate) + 0.15*latency/30000",
+        "config_version": catalog.version,
     }

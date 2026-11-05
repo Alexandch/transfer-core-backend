@@ -101,6 +101,14 @@ class FakeGateway:
         if mode == "decline":
             return httpx.Response(422, json={"code": "RECIPIENT_ACCOUNT_INVALID"})
         if mode == "error_5xx":
+            self.payouts.setdefault(
+                reference,
+                {
+                    "reference": reference,
+                    "payout_id": "po_" + reference,
+                    "status": "FAILED",
+                },
+            )
             return httpx.Response(500)
         if mode == "disconnect_before" and not self.disconnected:
             self.disconnected = True
@@ -121,7 +129,7 @@ class FakeGateway:
         payout = self.payouts.get(reference)
         if payout is None:
             return httpx.Response(404)
-        if self.finish:
+        if self.finish and payout["status"] != "FAILED":
             payout["status"] = "COMPLETED"
         return httpx.Response(200, json=payout)
 

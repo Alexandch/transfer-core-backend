@@ -1,11 +1,16 @@
 import hashlib
 import hmac
+import json
+import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from uuid import uuid4
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 from sqlalchemy import func, select, text
 
 from app.catalog import Catalog
@@ -13,6 +18,7 @@ from app.clock import iso, now
 from app.config import Settings, settings
 from app.db import Quote, SessionLocal, Transfer
 from app.errors import DomainError
+from app.observability import configure_logging, metrics_text
 from app.pricing import calculate
 from app.provider import ProviderGateway
 from app.rates import Rates
@@ -35,12 +41,34 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        configure_logging()
         with sessions.begin() as session:
             seed(session, Catalog(config.data_dir))
         yield
         gateway.client.close()
 
     api = FastAPI(title="Transfer Core", version="0.1.0", lifespan=lifespan)
+
+    @api.middleware("http")
+    async def request_log(request: Request, call_next):
+        started = time.monotonic()
+        request_id = str(uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        logging.getLogger("transfer.api").info(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "transfer_id": getattr(request.state, "transfer_id", None),
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": round((time.monotonic() - started) * 1000, 2),
+                }
+            )
+        )
+        return response
 
     @api.exception_handler(DomainError)
     async def domain_handler(_: Request, exc: DomainError):
@@ -86,6 +114,7 @@ def create_app(
     @api.post("/transfers", status_code=202)
     def post_transfer(
         body: TransferRequest,
+        request: Request,
         idempotency_key: str = Header(default=""),
         x_scenario: str | None = Header(default=None),
     ):
@@ -102,10 +131,13 @@ def create_app(
                 x_scenario,
                 now(),
             )
-            return transfer_view(session, transfer)
+            request.state.transfer_id = transfer.id
+            result = transfer_view(session, transfer)
+        return result
 
     @api.get("/transfers/{transfer_id}")
-    def read_transfer(transfer_id: str):
+    def read_transfer(transfer_id: str, request: Request):
+        request.state.transfer_id = transfer_id
         with sessions() as session:
             transfer = session.get(Transfer, transfer_id)
             if transfer is None:
@@ -147,6 +179,11 @@ def create_app(
 
     @api.get("/metrics")
     def metrics():
+        with sessions() as session:
+            return Response(metrics_text(session), headers={"Content-Type": CONTENT_TYPE_LATEST})
+
+    @api.get("/stats")
+    def stats():
         with sessions() as session:
             counts = session.execute(
                 select(Transfer.status, func.count()).group_by(Transfer.status)

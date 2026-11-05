@@ -6,9 +6,12 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
+
+from app.catalog import Catalog
 
 
 def main():
@@ -19,6 +22,9 @@ def main():
     parser.add_argument("--api", default="http://localhost:8080")
     parser.add_argument("--provider", default="http://localhost:9000")
     parser.add_argument("--client", default="c_load")
+    parser.add_argument(
+        "--data-dir", type=Path, default=Path(__file__).resolve().parents[1] / "data"
+    )
     args = parser.parse_args()
     run = str(uuid4())
     with httpx.Client(base_url=args.api, timeout=15) as client:
@@ -71,7 +77,8 @@ def main():
         assert not unresolved, f"Transfers neither terminal nor reviewable: {len(unresolved)}"
         ledger = []
         with httpx.Client(base_url=args.provider) as provider:
-            for pid in ("prov_alpha", "prov_beta", "prov_gamma"):
+            for definition in Catalog(args.data_dir).providers:
+                pid = definition["provider_id"]
                 ledger.extend(provider.get(f"/{pid}/admin/ledger").raise_for_status().json())
         counts = Counter(row["reference"] for row in ledger)
         by_reference = {row["reference"]: row for row in ledger}
