@@ -129,7 +129,6 @@ def create_app(
                 idempotency_key,
                 Catalog(config.data_dir),
                 x_scenario,
-                now(),
             )
             request.state.transfer_id = transfer.id
             result = transfer_view(session, transfer)

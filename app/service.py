@@ -93,7 +93,7 @@ def create_transfer(
     key: str,
     catalog: Catalog,
     scenario: str | None,
-    at: datetime,
+    at: datetime | None = None,
 ) -> tuple[Transfer, bool]:
     if not key or not key.strip() or len(key) > 200:
         raise DomainError("VALIDATION_ERROR", "Idempotency-Key must contain 1..200 characters")
@@ -115,6 +115,9 @@ def create_transfer(
         raise DomainError("QUOTE_NOT_FOUND", "Quote not found", 404)
     if session.scalar(select(Transfer.id).where(Transfer.quote_id == quote.id)):
         raise DomainError("QUOTE_ALREADY_USED", "A quote can fund only one transfer", 409)
+    # Evaluate TTL and the UTC usage day after waiting for the client/quote locks.
+    # Explicit timestamps are only used by deterministic service-level tests.
+    at = at or now()
     if quote.expires_at <= at:
         raise DomainError("QUOTE_EXPIRED", "Quote expired", 409)
     q = quote.payload

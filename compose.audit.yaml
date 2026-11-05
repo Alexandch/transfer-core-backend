@@ -1,0 +1,60 @@
+name: transfer-core-audit
+x-app: &audit-app
+  build: {context: ., target: runtime}
+  environment:
+    DATABASE_URL: postgresql+psycopg://transfer:transfer_audit@db:5432/transfer
+    PROVIDER_URL: http://mock-provider:9000
+    PROVIDER_PROTOCOL: starter
+    CALLBACK_BASE_URL: http://api:8080
+    PROVIDER_WEBHOOK_SECRET: local-audit-secret
+    ALLOW_SCENARIOS: "true"
+  volumes: ["./data:/srv/data:ro"]
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: transfer
+      POSTGRES_PASSWORD: transfer_audit
+      POSTGRES_DB: transfer
+    tmpfs: ["/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transfer -d transfer"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  migrate:
+    <<: *audit-app
+    command: ["sh", "-c", "alembic upgrade head && python -m app.bootstrap"]
+    depends_on:
+      db: {condition: service_healthy}
+  mock-provider:
+    build: ./mock-provider
+    environment:
+      DATA_DIR: /data
+      MOCK_MODE: chaos
+      MOCK_SEED: ${AUDIT_MOCK_SEED:-42}
+      PROVIDER_WEBHOOK_SECRET: local-audit-secret
+    ports: ["127.0.0.1:19000:9000"]
+    volumes: ["./data:/data:ro"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health',timeout=2)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  api:
+    <<: *audit-app
+    ports: ["127.0.0.1:18080:8080"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      mock-provider: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=2)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  worker:
+    <<: *audit-app
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      mock-provider: {condition: service_healthy}

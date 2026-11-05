@@ -6,7 +6,7 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from sqlalchemy import func, select
 
 from app.clock import iso, now
-from app.db import Attempt, Transfer
+from app.db import Account, Attempt, Transfer
 
 
 class JsonFormatter(logging.Formatter):
@@ -38,10 +38,20 @@ def metrics_text(session) -> str:
             totals = GaugeMetricFamily(
                 "transfer_core_transfers", "Transfers by status", labels=["status"]
             )
-            for status, count in session.execute(
-                select(Transfer.status, func.count()).group_by(Transfer.status)
+            counts = dict(
+                session.execute(
+                    select(Transfer.status, func.count()).group_by(Transfer.status)
+                ).all()
+            )
+            for status in (
+                "RESERVED",
+                "PROCESSING",
+                "UNKNOWN",
+                "NEEDS_REVIEW",
+                "COMPLETED",
+                "FAILED",
             ):
-                totals.add_metric([status], count)
+                totals.add_metric([status], counts.get(status, 0))
             yield totals
             states = GaugeMetricFamily(
                 "transfer_core_transfer_status",
@@ -69,6 +79,19 @@ def metrics_text(session) -> str:
                     [attempt.transfer_id, attempt.id, attempt.provider_id], attempt.sends
                 )
             yield sends
+            balances = GaugeMetricFamily(
+                "transfer_core_balance_minor_units",
+                "Account balance in minor units",
+                labels=["client_id", "currency", "kind"],
+            )
+            for account in session.scalars(
+                select(Account).order_by(Account.client_id, Account.currency)
+            ):
+                for kind in ("available", "held", "spent", "initial"):
+                    balances.add_metric(
+                        [account.client_id, account.currency, kind], getattr(account, kind)
+                    )
+            yield balances
 
     registry = CollectorRegistry()
     registry.register(DatabaseCollector())

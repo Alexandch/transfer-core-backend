@@ -10,6 +10,23 @@ from app.observability import JsonFormatter
 from app.worker import Worker
 
 
+def test_empty_metrics_have_zero_statuses_and_seeded_balances(api):
+    response = api.get("/metrics")
+    samples = [
+        s for family in text_string_to_metric_families(response.text) for s in family.samples
+    ]
+    statuses = {s.labels["status"]: s.value for s in samples if s.name == "transfer_core_transfers"}
+    assert statuses == {
+        s: 0 for s in ("RESERVED", "PROCESSING", "UNKNOWN", "NEEDS_REVIEW", "COMPLETED", "FAILED")
+    }
+    balances = {
+        s.labels["kind"]: s.value
+        for s in samples
+        if s.name == "transfer_core_balance_minor_units" and s.labels["client_id"] == "c_001"
+    }
+    assert balances == {"available": 50000000, "held": 0, "spent": 0, "initial": 50000000}
+
+
 def test_metrics_include_transfer_and_persisted_attempt(api, db, config, gateway, transfer_request):
     tid = api.post(
         "/transfers", json=transfer_request, headers={"Idempotency-Key": "metrics"}

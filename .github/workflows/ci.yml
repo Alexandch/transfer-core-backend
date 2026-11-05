@@ -13,6 +13,8 @@ jobs:
         run: docker compose --profile test run --rm tests ruff check app tests scripts migrations
       - name: Format
         run: docker compose --profile test run --rm tests ruff format --check app tests scripts migrations
+      - name: Prometheus configuration
+        run: docker compose run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
       - name: Clean up
         if: always()
         run: docker compose --profile test down -v
