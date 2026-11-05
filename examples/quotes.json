@@ -1,0 +1,12 @@
+[
+  {"request": {"amount": "10000.00"}, "expected": {"source_amount": {"amount": "10000.00"}, "fee": {"amount": "150.00"}, "target_amount": {"amount": "4137.00"}}},
+  {"request": {"amount": "2000.00"}, "expected": {"fee": {"amount": "50.00"}, "target_amount": {"amount": "819.00"}}},
+  {"request": {"amount": "4137.00", "amount_type": "TARGET"}, "expected": {"source_amount": {"amount": "10000.00"}, "fee": {"amount": "150.00"}}},
+  {"request": {"amount": "500.00"}, "error": "AMOUNT_BELOW_MIN"},
+  {"request": {"amount": "300000.01"}, "error": "AMOUNT_ABOVE_MAX"},
+  {"request": {"payout_method": "CARD"}, "expected": {"fee": {"amount": "87.00", "currency": "THB"}, "target_amount": {"amount": "4113.00"}}},
+  {"request": {"target_country": "JP", "target_currency": "JPY"}, "expected": {"target_amount": {"amount": "14775", "currency": "JPY"}}},
+  {"request": {"target_country": "KW", "target_currency": "KWD"}, "expected": {"target_amount": {"amount": "29.395", "currency": "KWD"}}},
+  {"request": {"amount": "10000.01"}, "expected": {"fee": {"amount": "150.01"}, "target_amount": {"amount": "4137.00"}}},
+  {"request": {"payout_method": "CASH"}, "error": "UNSUPPORTED_DIRECTION"}
+]

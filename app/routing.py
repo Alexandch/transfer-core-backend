@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import localcontext
 
 from app.catalog import Catalog
+from app.errors import DomainError
 from app.money import D, fee, fmt, minor, quantize, units
 from app.rates import Rates
 
@@ -33,13 +34,19 @@ def select_providers(quote: dict, catalog: Catalog, rates: Rates, at: datetime) 
                 continue
             currency = provider["currency"]
             digits = catalog.currencies[currency]
-            principal = D(quote["target_amount"]["amount"]) * rates.get(target, currency)
+            try:
+                payout_rate = rates.get(target, currency)
+                cost_rate = rates.get(currency, source)
+            except DomainError:
+                rejected.append({"provider_id": pid, "reason": "rate_unavailable"})
+                continue
+            principal = D(quote["target_amount"]["amount"]) * payout_rate
             if not D(provider["limits"]["min"]) <= principal <= D(provider["limits"]["max"]):
                 rejected.append({"provider_id": pid, "reason": "limits"})
                 continue
             principal_minor = quantize(principal, digits, up=True)
             cost_minor = fee(principal_minor, digits, provider["fee"])
-            cost_source = units(cost_minor, digits) * rates.get(currency, source)
+            cost_source = units(cost_minor, digits) * cost_rate
             margin_percent = (fee_value - cost_source) / source_value * 100
             if margin_percent < D(tariff["min_margin_percent"]):
                 rejected.append(

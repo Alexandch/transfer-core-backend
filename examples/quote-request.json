@@ -1,0 +1,9 @@
+{
+  "source_country": "RU",
+  "source_currency": "RUB",
+  "target_country": "TH",
+  "target_currency": "THB",
+  "payout_method": "BANK_ACCOUNT",
+  "amount": "10000.00",
+  "amount_type": "SOURCE"
+}

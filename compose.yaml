@@ -1,0 +1,92 @@
+name: transfer-core
+x-app: &app
+  build: {context: ., target: runtime}
+  environment: &env
+    DATABASE_URL: postgresql+psycopg://transfer:transfer_dev@db:5432/transfer
+    PROVIDER_URL: http://mock-provider:9000
+    CALLBACK_BASE_URL: http://api:8080
+    PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-local-demo-secret}
+    ALLOW_SCENARIOS: ${ALLOW_SCENARIOS:-true}
+    MAX_RATE_AGE_SEC: ${MAX_RATE_AGE_SEC:-3600}
+  volumes: ["./data:/srv/data:ro"]
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: transfer
+      POSTGRES_PASSWORD: transfer_dev
+      POSTGRES_DB: transfer
+    ports: ["127.0.0.1:55438:5432"]
+    volumes: ["db18-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transfer -d transfer"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  migrate:
+    <<: *app
+    command: ["sh", "-c", "alembic upgrade head && python -m app.bootstrap"]
+    depends_on:
+      db: {condition: service_healthy}
+  mock-provider:
+    build: {context: ., target: runtime}
+    command: ["uvicorn", "app.mock_provider:app", "--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://transfer:transfer_dev@db:5432/transfer
+      PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-local-demo-secret}
+      MOCK_MODE: ${MOCK_MODE:-normal}
+      MOCK_SEED: ${MOCK_SEED:-42}
+      MOCK_SLOW_SEC: ${MOCK_SLOW_SEC:-30}
+    ports: ["127.0.0.1:9000:9000"]
+    volumes: ["./data:/srv/data:ro"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  api:
+    <<: *app
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      mock-provider: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      mock-provider: {condition: service_healthy}
+  test-db:
+    image: postgres:18-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: transfer_test
+    tmpfs: ["/var/lib/postgresql"]
+    ports: ["127.0.0.1:55439:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d transfer_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  tests:
+    build: {context: ., target: test}
+    profiles: ["test"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://test:test@test-db:5432/transfer_test
+      TEST_DATABASE_URL: postgresql+psycopg://test:test@test-db:5432/transfer_test
+    depends_on:
+      test-db: {condition: service_healthy}
+
+volumes:
+  db18-data:

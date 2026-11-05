@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://transfer:transfer_dev@localhost:55438/transfer"
+    database_url: str = "postgresql+psycopg://transfer:transfer_dev@127.0.0.1:55438/transfer"
     data_dir: Path = Path("data")
     provider_url: str = "http://localhost:9000"
     callback_base_url: str = "http://api:8080"
