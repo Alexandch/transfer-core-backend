@@ -137,7 +137,9 @@ class Worker:
         try:
             if submit:
                 response = self.gateway.submit(provider_id, attempt_id, quote, recipient, scenario)
-                self.handle_response(transfer_id, owner, attempt_id, response, submitted=True)
+                self.handle_response(
+                    transfer_id, owner, attempt_id, response, submitted=True, fresh=True
+                )
             else:
                 response = self.gateway.lookup(provider_id, attempt_id)
                 if response.status_code == 404:
@@ -169,7 +171,14 @@ class Worker:
             self.apply(transfer_id, owner, attempt_id, "UNKNOWN", "AMBIGUOUS_RESPONSE")
 
     def handle_response(
-        self, tid: str, owner: str, aid: str, response: httpx.Response, *, submitted: bool
+        self,
+        tid: str,
+        owner: str,
+        aid: str,
+        response: httpx.Response,
+        *,
+        submitted: bool,
+        fresh: bool = False,
     ) -> None:
         if submitted and response.status_code == 422:
             body = response.json()
@@ -181,6 +190,20 @@ class Worker:
                 raise ValueError("Invalid decline response")
             self.apply(tid, owner, aid, "FAILED", body["code"], source="submit")
         elif response.status_code >= 500:
+            if fresh and self.config.provider_protocol == "starter" and response.status_code == 500:
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = None
+                # starter main.create_payout returns this error before Store.create for a
+                # fresh key. Replays may fail after acceptance and MUST remain ambiguous.
+                if (
+                    isinstance(body, dict)
+                    and body.get("code") == "INTERNAL_ERROR"
+                    and body.get("message") == "internal provider error"
+                ):
+                    self.apply(tid, owner, aid, "FAILED", "STARTER_INTERNAL_ERROR", source="submit")
+                    return
             result = "SUBMIT_HTTP_5XX" if submitted else "LOOKUP_HTTP_5XX"
             self.apply(
                 tid, owner, aid, "UNKNOWN", result, source="submit" if submitted else "lookup"

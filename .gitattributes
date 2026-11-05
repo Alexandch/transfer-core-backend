@@ -1,3 +1,7 @@
 * text=auto eol=lf
 *.png binary
 *.zip binary
+data/** -text
+examples/[0-9]*.json -text
+mock-provider/** -text
+scripts/chaos_run.py -text

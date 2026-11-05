@@ -1,0 +1,6 @@
+[
+  {"base": "RUB", "quote": "THB", "rate": "0.4200", "updated_at": "2026-11-02T09:00:00Z"},
+  {"base": "RUB", "quote": "USD", "rate": "0.0100", "updated_at": "2026-11-02T09:00:00Z"},
+  {"base": "RUB", "quote": "JPY", "rate": "1.5000", "updated_at": "2026-11-02T09:00:00Z"},
+  {"base": "RUB", "quote": "KWD", "rate": "0.0030", "updated_at": "2026-11-02T09:00:00Z"}
+]

@@ -17,6 +17,8 @@ ENV COVERAGE_FILE=/tmp/.coverage RUFF_CACHE_DIR=/tmp/ruff-cache PYTEST_ADDOPTS="
 RUN uv sync --frozen
 COPY tests ./tests
 COPY examples ./examples
+COPY mock-provider ./mock-provider
+COPY starter-manifest.json ./starter-manifest.json
 USER service
 CMD ["pytest", "-q", "--cov=app", "--cov-report=term-missing"]
 

@@ -57,12 +57,18 @@ def test_all_providers_disabled_after_reservation(
     assert api.get("/clients/c_001/balance").json()["balances"]["RUB"]["available"] == "500000.00"
 
 
-def test_no_eligible_provider_does_not_hold_funds(api, db, transfer_request, monkeypatch):
+def test_no_eligible_provider_finishes_failed_and_releases_funds(
+    api, db, config, gateway, transfer_request, monkeypatch
+):
     monkeypatch.setattr(
         "app.service.select_providers", lambda *_: {"candidates": [], "rejected": []}
+    )
+    monkeypatch.setattr(
+        "app.worker.select_providers", lambda *_: {"candidates": [], "rejected": []}
     )
     response = api.post(
         "/transfers", json=transfer_request, headers={"Idempotency-Key": "no-provider"}
     )
-    assert response.json()["error"]["code"] == "NO_ELIGIBLE_PROVIDER"
+    assert response.status_code == 202
+    assert run_worker(Worker(db, config, gateway), db, response.json()["transfer_id"]) == "FAILED"
     assert api.get("/clients/c_001/balance").json()["balances"]["RUB"]["held"] == "0.00"

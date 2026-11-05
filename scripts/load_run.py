@@ -1,4 +1,4 @@
-"""Measure HTTP latency/throughput and verify completion through the demo ledger."""
+"""Measure HTTP latency/throughput and verify completion through the starter ledger."""
 
 import argparse
 import json
@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--api", default="http://localhost:8080")
     parser.add_argument("--provider", default="http://localhost:9000")
     parser.add_argument("--output", default=None)
+    parser.add_argument("--client", default="c_101")
     parser.add_argument(
         "--data-dir", type=Path, default=Path(__file__).resolve().parents[1] / "data"
     )
@@ -42,7 +43,11 @@ def main():
     with httpx.Client(
         base_url=args.api, timeout=30, limits=httpx.Limits(max_connections=args.concurrency + 2)
     ) as client:
-        before = client.get("/clients/c_load/balance").raise_for_status().json()["balances"]["RUB"]
+        before = (
+            client.get(f"/clients/{args.client}/balance")
+            .raise_for_status()
+            .json()["balances"]["RUB"]
+        )
         started = time.monotonic()
 
         def create(index):
@@ -70,7 +75,7 @@ def main():
                     "/transfers",
                     json={
                         "quote_id": quote["quote_id"],
-                        "client_id": "c_load",
+                        "client_id": args.client,
                         "recipient": {
                             "name": "Load Test",
                             "account": f"load-{run}-{index}",
@@ -104,11 +109,16 @@ def main():
         with httpx.Client(base_url=args.provider, timeout=30) as provider:
             for definition in Catalog(args.data_dir).providers:
                 pid = definition["provider_id"]
-                ledger += provider.get(f"/{pid}/admin/ledger").raise_for_status().json()
+                entries = provider.get(f"/{pid}/admin/ledger").raise_for_status().json()["entries"]
+                ledger += [entry for entry in entries if entry["status"] == "COMPLETED"]
         actual = Counter(row["reference"] for row in ledger)
         for result in results.values():
             assert sum(actual[a["reference"]] for a in result["attempts"]) == 1
-        after = client.get("/clients/c_load/balance").raise_for_status().json()["balances"]["RUB"]
+        after = (
+            client.get(f"/clients/{args.client}/balance")
+            .raise_for_status()
+            .json()["balances"]["RUB"]
+        )
         assert (
             Decimal(after["spent"]) - Decimal(before["spent"]) == Decimal("1000") * args.transfers
         )
@@ -127,7 +137,9 @@ def main():
         output = json.dumps(report, indent=2)
         print(output)
         if args.output:
-            Path(args.output).write_text(output + "\n", encoding="utf-8")
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(output + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

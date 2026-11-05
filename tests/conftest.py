@@ -19,11 +19,12 @@ from app.db import Base, Transfer
 from app.service import seed
 
 ROOT = Path(__file__).resolve().parents[1]
+DEMO = ROOT / "tests/fixtures/demo"
 
 
 @pytest.fixture
 def catalog():
-    return Catalog(ROOT / "data")
+    return Catalog(DEMO / "data")
 
 
 @pytest.fixture
@@ -86,7 +87,7 @@ class FakeGateway:
 
     def respond(self, request):
         rows = [
-            {**r, "updated_at": iso(now())} for r in records(ROOT / "data" / "rates.json", "rates")
+            {**r, "updated_at": iso(now())} for r in records(DEMO / "data" / "rates.json", "rates")
         ]
         return httpx.Response(200, json=rows)
 
@@ -141,7 +142,7 @@ def gateway():
 
 @pytest.fixture
 def config():
-    return Settings(data_dir=ROOT / "data", allow_scenarios=True, poll_interval_sec=0)
+    return Settings(data_dir=DEMO / "data", allow_scenarios=True, poll_interval_sec=0)
 
 
 @pytest.fixture

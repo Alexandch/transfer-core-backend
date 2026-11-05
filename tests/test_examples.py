@@ -1,19 +1,19 @@
 import json
 
 import pytest
-from conftest import ROOT
+from conftest import DEMO
 
 from app.catalog import records
 from app.errors import DomainError
 from app.pricing import calculate
 from app.rates import Rates
 
-EXAMPLES = json.loads((ROOT / "examples" / "quotes.json").read_text())
+EXAMPLES = json.loads((DEMO / "quotes.json").read_text())
 
 
 @pytest.mark.parametrize("example", EXAMPLES)
 def test_demo_examples(example, catalog, at, quote_request):
-    rates = Rates(records(ROOT / "data" / "rates.json", "rates"), at, 3600)
+    rates = Rates(records(DEMO / "data" / "rates.json", "rates"), at, 3600)
     request = {**quote_request, **example["request"]}
     if "error" in example:
         with pytest.raises(DomainError) as caught:

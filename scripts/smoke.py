@@ -1,3 +1,4 @@
+import argparse
 import json
 import time
 from uuid import uuid4
@@ -6,8 +7,12 @@ import httpx
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--client", default="c_101")
+    parser.add_argument("--api", default="http://localhost:8080")
+    args = parser.parse_args()
     results = {}
-    with httpx.Client(base_url="http://localhost:8080", timeout=15) as client:
+    with httpx.Client(base_url=args.api, timeout=15) as client:
         for scenario in ("ok", "decline", "error_5xx", "slow"):
             quote = (
                 client.post(
@@ -30,7 +35,7 @@ def main():
                     "/transfers",
                     json={
                         "quote_id": quote["quote_id"],
-                        "client_id": "c_load",
+                        "client_id": args.client,
                         "recipient": {"name": "Smoke Test", "account": "demo", "bank_code": "DEMO"},
                     },
                     headers={"Idempotency-Key": str(uuid4()), "X-Scenario": scenario},

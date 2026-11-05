@@ -4,6 +4,7 @@ x-app: &app
   environment: &env
     DATABASE_URL: postgresql+psycopg://transfer:transfer_dev@db:5432/transfer
     PROVIDER_URL: http://mock-provider:9000
+    PROVIDER_PROTOCOL: starter
     CALLBACK_BASE_URL: http://api:8080
     PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-local-demo-secret}
     ALLOW_SCENARIOS: ${ALLOW_SCENARIOS:-true}
@@ -18,7 +19,7 @@ services:
       POSTGRES_PASSWORD: transfer_dev
       POSTGRES_DB: transfer
     ports: ["127.0.0.1:55438:5432"]
-    volumes: ["db18-data:/var/lib/postgresql"]
+    volumes: ["db-starter-data:/var/lib/postgresql"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U transfer -d transfer"]
       interval: 2s
@@ -30,18 +31,16 @@ services:
     depends_on:
       db: {condition: service_healthy}
   mock-provider:
-    build: {context: ., target: runtime}
-    command: ["uvicorn", "app.mock_provider:app", "--host", "0.0.0.0", "--port", "9000"]
+    build: ./mock-provider
     environment:
-      DATABASE_URL: postgresql+psycopg://transfer:transfer_dev@db:5432/transfer
+      DATA_DIR: /data
       PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-local-demo-secret}
       MOCK_MODE: ${MOCK_MODE:-normal}
       MOCK_SEED: ${MOCK_SEED:-42}
       MOCK_SLOW_SEC: ${MOCK_SLOW_SEC:-30}
+      MOCK_SCENARIO: ${MOCK_SCENARIO:-ok}
     ports: ["127.0.0.1:9000:9000"]
-    volumes: ["./data:/srv/data:ro"]
-    depends_on:
-      migrate: {condition: service_completed_successfully}
+    volumes: ["./data:/data:ro"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 2s
@@ -89,4 +88,4 @@ services:
       test-db: {condition: service_healthy}
 
 volumes:
-  db18-data:
+  db-starter-data:

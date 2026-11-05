@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://transfer:transfer_dev@127.0.0.1:55438/transfer"
     data_dir: Path = Path("data")
     provider_url: str = "http://localhost:9000"
+    provider_protocol: Literal["conservative", "starter"] = "conservative"
     callback_base_url: str = "http://api:8080"
     provider_webhook_secret: str = "local-demo-secret"
     allow_scenarios: bool = False

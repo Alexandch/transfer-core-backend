@@ -138,13 +138,6 @@ def create_transfer(
     if usage.amount + daily_amount > client.daily_limit:
         raise DomainError("DAILY_LIMIT_EXCEEDED", "Daily limit exceeded", 409)
     plan = select_providers(q, catalog, rates, at)
-    if not plan["candidates"]:
-        raise DomainError(
-            "NO_ELIGIBLE_PROVIDER",
-            "No provider satisfies limits and margin",
-            409,
-            {"rejected": plan["rejected"]},
-        )
     account.available -= amount
     account.held += amount
     usage.amount += daily_amount
