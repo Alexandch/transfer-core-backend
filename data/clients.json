@@ -1,0 +1,4 @@
+[
+  {"client_id": "c_001", "balances": {"RUB": "500000.00"}, "daily_limit": {"amount": "300000.00", "currency": "RUB"}},
+  {"client_id": "c_load", "balances": {"RUB": "1000000000.00"}, "daily_limit": {"amount": "1000000000.00", "currency": "RUB"}}
+]
